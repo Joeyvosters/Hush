@@ -1,7 +1,7 @@
 {
   "name": "Hush — White Noise",
   "short_name": "Hush",
-  "description": "A calm, offline white-noise player. Rain, ocean, fan, and breeze sounds with a sleep timer.",
+  "description": "A calm, offline white-noise player. Rain, ocean, fan, breeze, and coffee-shop sounds with a sleep timer.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

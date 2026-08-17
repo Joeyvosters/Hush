@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Hush — White Noise</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="description" content="A calm, offline white-noise player. Rain, ocean, fan, and breeze sounds with a sleep timer.">
+<meta name="description" content="A calm, offline white-noise player. Rain, ocean, fan, breeze, and coffee-shop sounds with a sleep timer.">
 <meta name="theme-color" content="#0d0b14">
 <!-- iOS home-screen / standalone -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -172,6 +172,8 @@
       ],
       filter:{type:"lowpass", freq:1000, Q:0.5},
       am:{ waves:[ {period:41, depth:0.34}, {period:13, depth:0.22}, {period:5.5, depth:0.13} ] } },
+    // Coffee Shop: a fully custom event-driven ambience (see buildCoffeeShop()).
+    { id:"coffee", name:"Coffee Shop", ico:"☕", build:buildCoffeeShop },
   ];
 
   const SR = 44100;
@@ -268,11 +270,35 @@
     }
   }
 
+  // Equal-power crossfade fold + normalise + quantise to a 16-bit master of length N.
+  // Blends the trailing XF into the head so the loop end flows into its start with no
+  // click, then scales to a fixed peak (a single uniform gain, so any pre-balanced mix
+  // keeps its internal proportions).
+  function finalize(base, off){
+    for(let i=0;i<XF;i++){
+      const t = i/XF;
+      base[off+i] = base[off+i]*Math.sin(t*Math.PI/2) + base[off+N+i]*Math.cos(t*Math.PI/2);
+    }
+    let peak = 1e-6;
+    for(let i=0;i<N;i++){ const a=Math.abs(base[off+i]); if(a>peak) peak=a; }
+    const g = 0.92/peak;
+    const master = new Int16Array(N);
+    for(let i=0;i<N;i++){
+      let s = base[off+i]*g;
+      s = s<-1?-1:s>1?1:s;
+      master[i] = s<0 ? s*0x8000 : s*0x7fff;
+    }
+    return master;
+  }
+
   // Render a sound to a seamless, normalised 16-bit master of length N.
-  // A sound is either a single `color` (+ optional `filter`), or a `mix` of layers
-  // (each its own color + optional per-layer filter + gain) summed together, with an
-  // optional overall `filter` on top.
+  // A sound is either a single `color` (+ optional `filter`), a `mix` of layers
+  // (each its own color + optional per-layer filter + gain) summed together with an
+  // optional overall `filter` on top, or a fully custom `build()` that returns its
+  // own M-length Float32 buffer (used by Coffee Shop).
   function render(cfg){
+    if(cfg.build) return finalize(cfg.build(), 0);
+
     const hasFilter = !!cfg.filter || (cfg.mix && cfg.mix.some(l=>l.filter));
     const total = hasFilter ? WARMUP + M : M;
 
@@ -307,24 +333,121 @@
       }
     }
 
-    // Equal-power crossfade fold, in place: blend the trailing XF into the head so
-    // the end of the loop flows into its start with no click or thump.
-    for(let i=0;i<XF;i++){
-      const t = i/XF;
-      base[off+i] = base[off+i]*Math.sin(t*Math.PI/2) + base[off+N+i]*Math.cos(t*Math.PI/2);
+    return finalize(base, off);
+  }
+
+  // ---------- Coffee Shop: a fully custom, event-driven ambience ----------
+  // Built by summing several procedural layers into one M-length buffer:
+  //   • a low room-tone bed (the background hum)
+  //   • a murmur of distant conversation — noise shaped by vowel-formant bandpasses
+  //     and gated at a syllable rhythm, several detuned "voices" summed (unintelligible)
+  //   • sparse ceramic clinks (decaying inharmonic partials)
+  //   • occasional espresso steam bursts (enveloped high-pass hiss)
+  // Discrete events are scheduled clear of the loop's crossfade region on both ends,
+  // so finalize()'s fold still seams the continuous beds cleanly.
+
+  // Bandpass `src` and accumulate the result into `out` (no extra buffer copy).
+  function bandpassAccum(src, out, gain, freq, Q, len){
+    const c = biquadCoeffs("bandpass", freq, Q);
+    let x1=0,x2=0,y1=0,y2=0;
+    for(let i=0;i<len;i++){
+      const x = src[i];
+      const y = c.b0*x + c.b1*x1 + c.b2*x2 - c.a1*y1 - c.a2*y2;
+      x2=x1; x1=x; y2=y1; y1=y;
+      out[i] += y*gain;
+    }
+  }
+
+  // A speech-like amplitude envelope: random syllable levels (with pauses) at ~rate Hz,
+  // smoothed by a one-pole so there are no clicks between syllables.
+  function syllableEnv(len, rate){
+    const env = new Float32Array(len);
+    const step = SR/rate;
+    const a = Math.exp(-1/(SR*0.028));  // ~28 ms smoothing
+    let cur = 0, target = 0.5, nextAt = step;
+    for(let i=0;i<len;i++){
+      if(i >= nextAt){
+        target = Math.random() < 0.14 ? 0 : (0.35 + Math.random()*0.65); // busy => few pauses
+        nextAt += step*(0.6 + Math.random()*0.8);
+      }
+      cur = target + (cur-target)*a;
+      env[i] = cur;
+    }
+    return env;
+  }
+
+  // A ceramic "clink": a few inharmonic, exponentially-decaying partials + a tiny tick.
+  function addClink(buf, at, amp){
+    const f0 = 2400 + Math.random()*1900;
+    const partials = [ {m:1, g:1.0, d:0.10+Math.random()*0.06},
+                       {m:2.76, g:0.5, d:0.06}, {m:5.4, g:0.24, d:0.03} ];
+    for(const p of partials){
+      const w = 2*Math.PI*f0*p.m/SR, dec = p.d*SR, len = Math.floor(dec*6);
+      for(let i=0;i<len && at+i<buf.length;i++)
+        buf[at+i] += amp*p.g*Math.exp(-i/dec)*Math.sin(w*i);
+    }
+    // onset tick
+    for(let i=0;i<220 && at+i<buf.length;i++)
+      buf[at+i] += amp*0.5*(Math.random()*2-1)*Math.exp(-i/60);
+  }
+
+  // An espresso steam burst: high-pass hiss with a soft attack/release and slight flutter.
+  function addSteam(buf, at, durSec, amp){
+    const len = Math.floor(durSec*SR);
+    const n = makeBase("white", len);
+    applyBiquad(n, {type:"highpass", freq:2600, Q:0.7}, len);
+    const atk = SR*0.35, rel = SR*0.9;
+    for(let i=0;i<len && at+i<buf.length;i++){
+      let e = 1;
+      if(i < atk) e = i/atk;
+      else if(i > len-rel) e = (len-i)/rel;
+      const flutter = 1 + 0.12*Math.sin(2*Math.PI*i/(SR*0.05));
+      buf[at+i] += amp*e*flutter*n[i];
+    }
+  }
+
+  function buildCoffeeShop(){
+    const len = M;
+    const buf = new Float32Array(len);
+
+    // 1. Room-tone bed: brown + a little low pink, lowpassed, with a slow swell.
+    {
+      const b1 = makeBase("brown", len), b2 = makeBase("pink", len);
+      applyBiquad(b2, {type:"lowpass", freq:600, Q:0.6}, len);
+      for(let i=0;i<len;i++) b1[i] = b1[i] + b2[i]*0.5;
+      applyBiquad(b1, {type:"lowpass", freq:430, Q:0.5}, len);
+      const cyc = Math.max(1, Math.round(len/(SR*23))), per = len/cyc;
+      for(let i=0;i<len;i++) buf[i] += b1[i]*0.11*(1 + 0.2*Math.sin(2*Math.PI*i/per));
     }
 
-    // Normalise, then quantise to a 16-bit master we can re-encode at any volume.
-    let peak = 1e-6;
-    for(let i=0;i<N;i++){ const a=Math.abs(base[off+i]); if(a>peak) peak=a; }
-    const g = 0.92/peak;
-    const master = new Int16Array(N);
-    for(let i=0;i<N;i++){
-      let s = base[off+i]*g;
-      s = s<-1?-1:s>1?1:s;
-      master[i] = s<0 ? s*0x8000 : s*0x7fff;
+    // 2. Conversation murmur: several detuned formant "voices", each syllable-gated.
+    const voices = [
+      { f:[[500,3],[1500,3.5],[2500,4]], rate:4.6 },
+      { f:[[430,3],[1300,3.5],[2300,4]], rate:5.1 },
+      { f:[[600,3],[1700,3.5],[2700,4]], rate:4.1 },
+      { f:[[550,3],[1400,3.5],[2600,4]], rate:5.6 },
+    ];
+    const fg = [1.0, 0.7, 0.4]; // formant gains (F1..F3)
+    for(const v of voices){
+      const src = makeBase("pink", len);
+      const voiced = new Float32Array(len);
+      for(let k=0;k<v.f.length;k++) bandpassAccum(src, voiced, fg[k], v.f[k][0], v.f[k][1], len);
+      const env = syllableEnv(len, v.rate);
+      for(let i=0;i<len;i++) buf[i] += voiced[i]*env[i]*0.13; // busy => full, steady murmur
     }
-    return master;
+
+    // 3. Ceramic clinks — busy: one every ~5–11 s, kept off the loop seam.
+    for(let t = XF + Math.random()*6*SR; t < N - 0.5*SR; t += (5 + Math.random()*6)*SR)
+      addClink(buf, Math.floor(t), 0.30 + Math.random()*0.22);
+
+    // 4. Espresso steam — every ~45–80 s, 3–6 s each, clear of the seam.
+    for(let s = XF + 15*SR + Math.random()*25*SR; s < N - 7*SR; s += (45 + Math.random()*35)*SR)
+      addSteam(buf, Math.floor(s), 3 + Math.random()*3, 0.26);
+
+    // Gentle soft-limit so the sparse transients sit with the bed instead of dominating
+    // the peak normalise that follows.
+    for(let i=0;i<len;i++) buf[i] = Math.tanh(buf[i]*1.1);
+    return buf;
   }
 
   // ---------- WAV encoding (16-bit PCM mono): scale a master by gain ----------

@@ -15,6 +15,12 @@ the same waveform.
 volume across the whole loop with several slow amplitude waves summed together (a long
 gust, a medium swell, and a shorter flutter) for a gustier, less static feel.
 
+**Coffee Shop** is a fully custom, event-driven ambience: a low room-tone bed, a murmur
+of distant conversation (noise shaped by vowel-formant bandpasses and gated at a syllable
+rhythm, several detuned "voices" summed so nothing is intelligible), sparse ceramic clinks
+(decaying inharmonic partials), and the occasional espresso steam burst. Discrete events
+are scheduled clear of the loop's crossfade region so the seam stays clean.
+
 ### Why 5 minutes — the "no audible pattern" design
 
 The thing that makes most white-noise apps sound *looped* is a short clip (often
