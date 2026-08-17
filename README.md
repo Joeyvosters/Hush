@@ -6,10 +6,14 @@ files to download, so the whole app is a few kilobytes and works completely **of
 
 ## Sounds
 
-White · Pink · Brown · Rain · Ocean · Fan — each freshly synthesized as a seamless
-**5-minute** loop (equal-power crossfade at the loop boundary, so there's no click or
-thump). No audio clip is shipped and nothing is seeded, so no two sessions are the same
-waveform.
+White · Pink · Brown · Rain · Ocean · Fan · Breeze — each freshly synthesized as a
+seamless **5-minute** loop (equal-power crossfade at the loop boundary, so there's no
+click or thump). No audio clip is shipped and nothing is seeded, so no two sessions are
+the same waveform.
+
+**Breeze** layers Brown's deep body under Fan's airy filtered-pink air, then drifts its
+volume across the whole loop with several slow amplitude waves summed together (a long
+gust, a medium swell, and a shorter flutter) for a gustier, less static feel.
 
 ### Why 5 minutes — the "no audible pattern" design
 

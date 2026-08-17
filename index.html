@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Hush — White Noise</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="description" content="A calm, offline white-noise player. White, pink, brown, rain, ocean, and fan sounds with a sleep timer.">
+<meta name="description" content="A calm, offline white-noise player. White, pink, brown, rain, ocean, fan, and breeze sounds with a sleep timer.">
 <meta name="theme-color" content="#0d0b14">
 <!-- iOS home-screen / standalone -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -164,6 +164,15 @@
     { id:"rain",  name:"Rain",  ico:"🌧️", color:"white", filter:{type:"highpass", freq:820, Q:0.5} },
     { id:"ocean", name:"Ocean", ico:"🌊", color:"brown", filter:{type:"lowpass", freq:520, Q:0.5}, am:{period:11, depth:0.55} },
     { id:"fan",   name:"Fan",   ico:"💨", color:"pink",  filter:{type:"lowpass", freq:1100, Q:0.6} },
+    // Breeze: Brown's deep body + Fan's airy filtered-pink layer, with gusting swells
+    // (several amplitude waves summed) so the volume drifts across the whole loop.
+    { id:"breeze", name:"Breeze", ico:"🍃",
+      mix:[
+        { color:"brown", gain:1.0 },
+        { color:"pink", filter:{type:"lowpass", freq:1100, Q:0.6}, gain:0.85 },
+      ],
+      filter:{type:"lowpass", freq:1000, Q:0.5},
+      am:{ waves:[ {period:41, depth:0.34}, {period:13, depth:0.22}, {period:5.5, depth:0.13} ] } },
   ];
 
   const SR = 44100;
@@ -248,29 +257,55 @@
     return { b0:b0/a0, b1:b1/a0, b2:b2/a0, a1:a1/a0, a2:a2/a0 };
   }
 
-  // Render a sound to a seamless, normalised 16-bit master of length N.
-  function render(cfg){
-    const total = cfg.filter ? WARMUP + M : M;
-    const base = makeBase(cfg.color, total);   // Float32
-    let off = 0;
-
-    if(cfg.filter){
-      const c = biquadCoeffs(cfg.filter.type, cfg.filter.freq, cfg.filter.Q || 0.7);
-      let x1=0,x2=0,y1=0,y2=0;
-      for(let i=0;i<total;i++){
-        const x = base[i];
-        const y = c.b0*x + c.b1*x1 + c.b2*x2 - c.a1*y1 - c.a2*y2;
-        x2=x1; x1=x; y2=y1; y1=y;
-        base[i] = y;
-      }
-      off = WARMUP; // drop the settling transient
+  // Apply a biquad in place over the first `len` samples of `arr`.
+  function applyBiquad(arr, filter, len){
+    const c = biquadCoeffs(filter.type, filter.freq, filter.Q || 0.7);
+    let x1=0,x2=0,y1=0,y2=0;
+    for(let i=0;i<len;i++){
+      const x = arr[i];
+      const y = c.b0*x + c.b1*x1 + c.b2*x2 - c.a1*y1 - c.a2*y2;
+      x2=x1; x1=x; y2=y1; y1=y;
+      arr[i] = y;
     }
+  }
 
-    // Amplitude wave (whole number of cycles over N => seamless across the loop)
+  // Render a sound to a seamless, normalised 16-bit master of length N.
+  // A sound is either a single `color` (+ optional `filter`), or a `mix` of layers
+  // (each its own color + optional per-layer filter + gain) summed together, with an
+  // optional overall `filter` on top.
+  function render(cfg){
+    const hasFilter = !!cfg.filter || (cfg.mix && cfg.mix.some(l=>l.filter));
+    const total = hasFilter ? WARMUP + M : M;
+
+    let base;
+    if(cfg.mix){
+      base = new Float32Array(total);
+      for(const layer of cfg.mix){
+        const b = makeBase(layer.color, total);
+        if(layer.filter) applyBiquad(b, layer.filter, total);
+        const g = layer.gain==null ? 1 : layer.gain;
+        for(let i=0;i<total;i++) base[i] += b[i]*g;
+      }
+    } else {
+      base = makeBase(cfg.color, total);   // Float32
+    }
+    if(cfg.filter) applyBiquad(base, cfg.filter, total);
+
+    const off = hasFilter ? WARMUP : 0; // drop the settling transient
+
+    // Amplitude wave(s): each a whole number of cycles over N => seamless across the
+    // loop. Summing several (via `am.waves`) makes the level drift more, like gusts.
     if(cfg.am){
-      const cycles = Math.max(1, Math.round(N / (SR*cfg.am.period)));
-      const period = N / cycles;
-      for(let i=0;i<M;i++) base[off+i] *= 1 + cfg.am.depth*Math.sin(2*Math.PI*i/period);
+      const waves = cfg.am.waves || [cfg.am];
+      const envs = waves.map(w=>{
+        const cycles = Math.max(1, Math.round(N / (SR*w.period)));
+        return { period: N/cycles, depth: w.depth };
+      });
+      for(let i=0;i<M;i++){
+        let mod = 1;
+        for(let k=0;k<envs.length;k++) mod += envs[k].depth*Math.sin(2*Math.PI*i/envs[k].period);
+        base[off+i] *= mod;
+      }
     }
 
     // Equal-power crossfade fold, in place: blend the trailing XF into the head so
