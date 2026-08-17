@@ -1,6 +1,6 @@
 // Hush service worker — cache the shell so the app opens offline.
 // Bump CACHE when any listed file changes.
-const CACHE = "hush-v7";
+const CACHE = "hush-v8";
 const ASSETS = [
   "./",
   "./index.html",
