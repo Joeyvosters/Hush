@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Hush — White Noise</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="description" content="A calm, offline white-noise player. White, pink, brown, rain, ocean, fan, and breeze sounds with a sleep timer.">
+<meta name="description" content="A calm, offline white-noise player. Rain, ocean, fan, and breeze sounds with a sleep timer.">
 <meta name="theme-color" content="#0d0b14">
 <!-- iOS home-screen / standalone -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -157,10 +157,9 @@
 (function(){
   // ---------- Sound definitions (all synthesized, no files) ----------
   // color: base noise. filter: optional biquad. am: optional amplitude wave (whole cycles => seamless).
+  // Note: white/pink/brown are no longer selectable tiles, but makeBase() still
+  // generates them internally — they're the building blocks for the sounds below.
   const SOUNDS = [
-    { id:"white", name:"White", ico:"🌫️", color:"white" },
-    { id:"pink",  name:"Pink",  ico:"🌸", color:"pink" },
-    { id:"brown", name:"Brown", ico:"🟤", color:"brown" },
     { id:"rain",  name:"Rain",  ico:"🌧️", color:"white", filter:{type:"highpass", freq:820, Q:0.5} },
     { id:"ocean", name:"Ocean", ico:"🌊", color:"brown", filter:{type:"lowpass", freq:520, Q:0.5}, am:{period:11, depth:0.55} },
     { id:"fan",   name:"Fan",   ico:"💨", color:"pink",  filter:{type:"lowpass", freq:1100, Q:0.6} },
