@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hush — White Noise</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="description" content="A calm, offline white-noise player. White, pink, brown, rain, ocean, and fan sounds with a sleep timer.">
+<meta name="theme-color" content="#0d0b14">
+<!-- iOS home-screen / standalone -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hush">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root{
+    --bg:#0d0b14;
+    --bg2:#141020;
+    --card:#1b1626;
+    --card-hi:#2a2140;
+    --line:#2c2540;
+    --text:#eee7ff;
+    --muted:#9a90b5;
+    --accent:#b79bff;
+    --accent2:#7c5cff;
+    --glow:rgba(124,92,255,.45);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%;}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, #1a1330 0%, var(--bg) 55%) fixed;
+    color:var(--text);
+    font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+    min-height:100dvh;
+    padding:
+      calc(env(safe-area-inset-top) + 8px)
+      calc(env(safe-area-inset-right) + 18px)
+      calc(env(safe-area-inset-bottom) + 14px)
+      calc(env(safe-area-inset-left) + 18px);
+    overscroll-behavior:none;
+    user-select:none; -webkit-user-select:none;
+  }
+  header{text-align:center; padding:6px 0 2px;}
+  header h1{margin:0; font-size:22px; font-weight:650; letter-spacing:.5px;}
+  header p{margin:2px 0 0; font-size:12.5px; color:var(--muted);}
+
+  main{flex:1; display:flex; flex-direction:column; justify-content:center; gap:22px; max-width:520px; width:100%; margin:0 auto;}
+
+  /* Play button */
+  .stage{display:flex; flex-direction:column; align-items:center; gap:10px;}
+  .play{
+    width:132px; height:132px; border-radius:50%;
+    border:none; cursor:pointer; position:relative;
+    background:radial-gradient(circle at 35% 30%, var(--accent2), #4b32b8 70%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px var(--glow);
+    color:#fff; display:grid; place-items:center;
+    transition:transform .15s ease, box-shadow .3s ease;
+  }
+  .play:active{transform:scale(.96);}
+  .play svg{width:52px; height:52px; margin-left:2px;}
+  .play.playing svg{margin-left:0;}
+  .play .ring{position:absolute; inset:-10px; border-radius:50%; border:2px solid var(--glow); opacity:0;}
+  .play.playing .ring{animation:pulse 3.2s ease-out infinite;}
+  @keyframes pulse{0%{transform:scale(1);opacity:.6} 100%{transform:scale(1.28);opacity:0}}
+  .now{min-height:18px; font-size:14px; color:var(--muted); letter-spacing:.3px;}
+  .now b{color:var(--text); font-weight:600;}
+
+  /* Sound grid */
+  .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+  .sound{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:14px 8px 11px; text-align:center; cursor:pointer; color:var(--text);
+    transition:background .18s, border-color .18s, transform .1s;
+  }
+  .sound:active{transform:scale(.97);}
+  .sound .ico{font-size:26px; line-height:1; display:block; margin-bottom:6px; filter:saturate(1.1);}
+  .sound .nm{font-size:13px; color:var(--muted);}
+  .sound.on{background:var(--card-hi); border-color:var(--accent2); box-shadow:0 0 0 1px var(--accent2), 0 10px 30px -14px var(--glow);}
+  .sound.on .nm{color:var(--text);}
+  .sound.loading .ico{animation:spin 1s linear infinite; display:inline-block;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Controls */
+  .controls{display:flex; flex-direction:column; gap:16px;}
+  .vol{display:flex; align-items:center; gap:12px;}
+  .vol svg{width:20px; height:20px; color:var(--muted); flex:none;}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:999px;
+    background:linear-gradient(90deg,var(--accent2) var(--fill,60%), var(--line) var(--fill,60%));
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:22px; height:22px; border-radius:50%;
+    background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.5); cursor:pointer;
+  }
+  .timer{display:flex; flex-direction:column; gap:8px;}
+  .timer .label{display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted);}
+  .timer .label b{color:var(--accent); font-weight:600; font-variant-numeric:tabular-nums;}
+  .chips{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px;}
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:none; border:1px solid var(--line); background:var(--card); color:var(--muted);
+    border-radius:999px; padding:7px 15px; font-size:13px; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .chip:active{transform:scale(.96);}
+  .chip.on{background:var(--accent2); border-color:var(--accent2); color:#fff;}
+
+  footer{text-align:center; font-size:11.5px; color:var(--muted); opacity:.7; padding-top:14px; line-height:1.5;}
+
+  @media (max-height:680px){ .play{width:104px;height:104px} .play svg{width:42px;height:42px} main{gap:16px} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hush</h1>
+  <p>calm noise, made on your phone</p>
+</header>
+
+<main>
+  <div class="stage">
+    <button class="play" id="play" aria-label="Play or pause">
+      <span class="ring"></span>
+      <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="now" id="now">Pick a sound</div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="controls">
+    <div class="vol">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+      <input type="range" id="vol" min="0" max="100" value="65" aria-label="Volume">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3zm11.5 2A4.5 4.5 0 0012 8.03v7.94A4.5 4.5 0 0014.5 12zM12 3.23v2.06a7 7 0 010 13.42v2.06A9 9 0 0012 3.23z"/></svg>
+    </div>
+    <div class="timer">
+      <div class="label"><span>Sleep timer</span><b id="timerLabel">Off</b></div>
+      <div class="chips" id="chips"></div>
+    </div>
+  </div>
+</main>
+
+<footer id="footer">
+  In Safari, tap <b>Share → Add to Home Screen</b> for full-screen &amp; offline.
+</footer>
+
+<audio id="audio" loop playsinline preload="auto"></audio>
+
+<script>
+"use strict";
+(function(){
+  // ---------- Sound definitions (all synthesized, no files) ----------
+  // color: base noise. filter: optional biquad. am: optional amplitude wave (whole cycles => seamless).
+  const SOUNDS = [
+    { id:"white", name:"White", ico:"🌫️", color:"white" },
+    { id:"pink",  name:"Pink",  ico:"🌸", color:"pink" },
+    { id:"brown", name:"Brown", ico:"🟤", color:"brown" },
+    { id:"rain",  name:"Rain",  ico:"🌧️", color:"white", filter:{type:"highpass", freq:820, Q:0.5} },
+    { id:"ocean", name:"Ocean", ico:"🌊", color:"brown", filter:{type:"lowpass", freq:520, Q:0.5}, am:{period:11, depth:0.55} },
+    { id:"fan",   name:"Fan",   ico:"💨", color:"pink",  filter:{type:"lowpass", freq:1100, Q:0.6} },
+  ];
+
+  const SR = 44100;
+  // A natively-looped <audio> buffer is the only way to keep sound going while the
+  // phone is LOCKED (live Web Audio gets suspended). A loop repeats by definition, so
+  // the only lever against an audible "short clip" cycle is length: 5 minutes here means
+  // the ear never latches onto the repeat. Raise LOOP_SECONDS for an even longer period
+  // (costs ~5.3 MB of memory per extra minute).
+  const LOOP_SECONDS = 300;        // 5-minute loop
+  const XF = Math.floor(SR*0.5);   // crossfade fold length (samples)
+  const WARMUP = 8192;             // filter warm-up discarded so there's no start transient
+  const N = SR*LOOP_SECONDS;       // usable samples
+  const M = N + XF;                // generated samples (extra for the fold)
+
+  const TIMERS = [0,15,30,45,60,90]; // minutes
+
+  // ---------- State ----------
+  const state = {
+    soundId: null,
+    playing: false,
+    volume: 0.65,
+    timerMin: 0,
+    timerEndsAt: 0,   // epoch ms
+  };
+  const masters = {}; // id -> Int16Array (normalised, full-volume PCM master)
+  let cachedId = null; // only the current sound is kept in memory (buffers are large)
+  function cache(id, m){
+    if(cachedId && cachedId !== id) delete masters[cachedId];
+    masters[id] = m; cachedId = id;
+  }
+
+  // ---------- Elements ----------
+  const el = {
+    grid: document.getElementById("grid"),
+    chips: document.getElementById("chips"),
+    play: document.getElementById("play"),
+    playIcon: document.getElementById("playIcon"),
+    now: document.getElementById("now"),
+    vol: document.getElementById("vol"),
+    timerLabel: document.getElementById("timerLabel"),
+    audio: document.getElementById("audio"),
+  };
+
+  const ICON_PLAY  = 'M8 5v14l11-7z';
+  const ICON_PAUSE = 'M6 5h4v14H6zm8 0h4v14h-4z';
+
+  // ---------- Noise generators ----------
+  function makeBase(color, len){
+    const out = new Float32Array(len);
+    if(color === "white"){
+      for(let i=0;i<len;i++) out[i] = Math.random()*2-1;
+    } else if(color === "pink"){
+      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for(let i=0;i<len;i++){
+        const w = Math.random()*2-1;
+        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+        b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+        b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+        out[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;
+        b6=w*0.115926;
+      }
+    } else { // brown
+      let last=0;
+      for(let i=0;i<len;i++){
+        const w = Math.random()*2-1;
+        last=(last+0.02*w)/1.02;
+        out[i]=last*3.5;
+      }
+    }
+    return out;
+  }
+
+  // ---------- Biquad filter (RBJ cookbook), run in plain JS ----------
+  // Done inline rather than via OfflineAudioContext so minutes-long buffers render
+  // reliably (some engines cap OfflineAudioContext length) and with no extra deps.
+  function biquadCoeffs(type, freq, Q){
+    const w0 = 2*Math.PI*freq/SR, cos = Math.cos(w0), sin = Math.sin(w0), alpha = sin/(2*Q);
+    let b0,b1,b2,a0,a1,a2;
+    if(type === "lowpass"){       b0=(1-cos)/2; b1=1-cos;    b2=(1-cos)/2; a0=1+alpha; a1=-2*cos; a2=1-alpha; }
+    else if(type === "highpass"){ b0=(1+cos)/2; b1=-(1+cos); b2=(1+cos)/2; a0=1+alpha; a1=-2*cos; a2=1-alpha; }
+    else /* bandpass (0 dB peak) */ { b0=alpha; b1=0; b2=-alpha; a0=1+alpha; a1=-2*cos; a2=1-alpha; }
+    return { b0:b0/a0, b1:b1/a0, b2:b2/a0, a1:a1/a0, a2:a2/a0 };
+  }
+
+  // Render a sound to a seamless, normalised 16-bit master of length N.
+  function render(cfg){
+    const total = cfg.filter ? WARMUP + M : M;
+    const base = makeBase(cfg.color, total);   // Float32
+    let off = 0;
+
+    if(cfg.filter){
+      const c = biquadCoeffs(cfg.filter.type, cfg.filter.freq, cfg.filter.Q || 0.7);
+      let x1=0,x2=0,y1=0,y2=0;
+      for(let i=0;i<total;i++){
+        const x = base[i];
+        const y = c.b0*x + c.b1*x1 + c.b2*x2 - c.a1*y1 - c.a2*y2;
+        x2=x1; x1=x; y2=y1; y1=y;
+        base[i] = y;
+      }
+      off = WARMUP; // drop the settling transient
+    }
+
+    // Amplitude wave (whole number of cycles over N => seamless across the loop)
+    if(cfg.am){
+      const cycles = Math.max(1, Math.round(N / (SR*cfg.am.period)));
+      const period = N / cycles;
+      for(let i=0;i<M;i++) base[off+i] *= 1 + cfg.am.depth*Math.sin(2*Math.PI*i/period);
+    }
+
+    // Equal-power crossfade fold, in place: blend the trailing XF into the head so
+    // the end of the loop flows into its start with no click or thump.
+    for(let i=0;i<XF;i++){
+      const t = i/XF;
+      base[off+i] = base[off+i]*Math.sin(t*Math.PI/2) + base[off+N+i]*Math.cos(t*Math.PI/2);
+    }
+
+    // Normalise, then quantise to a 16-bit master we can re-encode at any volume.
+    let peak = 1e-6;
+    for(let i=0;i<N;i++){ const a=Math.abs(base[off+i]); if(a>peak) peak=a; }
+    const g = 0.92/peak;
+    const master = new Int16Array(N);
+    for(let i=0;i<N;i++){
+      let s = base[off+i]*g;
+      s = s<-1?-1:s>1?1:s;
+      master[i] = s<0 ? s*0x8000 : s*0x7fff;
+    }
+    return master;
+  }
+
+  // ---------- WAV encoding (16-bit PCM mono): scale a master by gain ----------
+  function encodeWAV(master, gain){
+    const len = master.length;
+    const buf = new ArrayBuffer(44 + len*2);
+    const v = new DataView(buf);
+    const ws = (o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+    ws(0,"RIFF"); v.setUint32(4, 36+len*2, true); ws(8,"WAVE");
+    ws(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,SR,true); v.setUint32(28,SR*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+    ws(36,"data"); v.setUint32(40, len*2, true);
+    let o=44;
+    for(let i=0;i<len;i++){
+      let s = master[i]*gain;
+      s = s<-32768?-32768:s>32767?32767:s;
+      v.setInt16(o, s, true); o+=2;
+    }
+    return new Blob([buf], {type:"audio/wav"});
+  }
+
+  // perceptual volume curve
+  function gainFor(v){ return v<=0 ? 0 : Math.pow(v, 1.6); }
+
+  let currentBlobUrl = null;
+  function loadAudioBlob(samples){
+    const blob = encodeWAV(samples, gainFor(state.volume));
+    const url = URL.createObjectURL(blob);
+    const at = el.audio.currentTime || 0;
+    el.audio.src = url;
+    if(currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = url;
+    return at;
+  }
+
+  // ---------- Playback ----------
+  async function selectSound(id){
+    const cfg = SOUNDS.find(s=>s.id===id);
+    if(!cfg) return;
+    state.soundId = id;
+    renderGrid();
+    setNow(`<b>${cfg.name}</b> · preparing…`);
+    markLoading(id, true);
+    try{
+      if(!masters[id]){
+        await new Promise(r=>setTimeout(r,20)); // let the spinner paint before the heavy render
+        cache(id, render(cfg));
+      }
+    }catch(e){
+      markLoading(id, false);
+      setNow("Couldn’t create that sound");
+      return;
+    }
+    markLoading(id, false);
+    loadAudioBlob(masters[id]);
+    await play();
+    persist();
+  }
+
+  async function play(){
+    if(!state.soundId) return;
+    try{
+      await el.audio.play();
+      state.playing = true;
+    }catch(e){
+      state.playing = false;
+    }
+    reflectPlay();
+    if(state.timerMin>0 && !state.timerEndsAt) startTimer(state.timerMin);
+  }
+
+  function pause(){
+    el.audio.pause();
+    state.playing = false;
+    reflectPlay();
+  }
+
+  function togglePlay(){
+    if(!state.soundId){ selectSound(SOUNDS[0].id); return; }
+    if(state.playing) pause(); else play();
+  }
+
+  // ---------- Sleep timer ----------
+  let tick = null, fadeRAF = null;
+  function startTimer(min){
+    clearTimer();
+    state.timerMin = min;
+    if(min<=0){ updateTimerLabel(); return; }
+    state.timerEndsAt = Date.now() + min*60000;
+    tick = setInterval(updateTimerLabel, 1000);
+    updateTimerLabel();
+  }
+  function clearTimer(){
+    if(tick){ clearInterval(tick); tick=null; }
+    if(fadeRAF){ cancelAnimationFrame(fadeRAF); fadeRAF=null; }
+    state.timerEndsAt = 0;
+  }
+  function updateTimerLabel(){
+    if(state.timerMin<=0 || !state.timerEndsAt){ el.timerLabel.textContent="Off"; return; }
+    let ms = state.timerEndsAt - Date.now();
+    if(ms<=0){ el.timerLabel.textContent="Off"; fadeAndStop(); return; }
+    // fade over last 20s using an actual re-encode ramp
+    const FADE=20000;
+    if(ms<=FADE && state.playing && !fadeRAF) beginFade(ms);
+    const s=Math.ceil(ms/1000), m=Math.floor(s/60), r=s%60;
+    el.timerLabel.textContent = `${m}:${String(r).padStart(2,"0")}`;
+  }
+  function beginFade(remaining){
+    const startVol = state.volume, t0=Date.now(), dur=remaining;
+    let last=1;
+    const step=()=>{
+      const p = Math.min(1, (Date.now()-t0)/dur);
+      const f = 1-p;
+      // re-encode occasionally so the fade is audible on iOS (volume baked into WAV)
+      if(Math.abs(f-last)>0.12 && state.soundId && masters[state.soundId]){
+        last=f;
+        const blob = encodeWAV(masters[state.soundId], gainFor(startVol*f));
+        const url = URL.createObjectURL(blob);
+        el.audio.src=url; el.audio.play().catch(()=>{});
+        if(currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl=url;
+      }
+      if(p<1){ fadeRAF=requestAnimationFrame(step); }
+    };
+    fadeRAF=requestAnimationFrame(step);
+  }
+  function fadeAndStop(){
+    clearTimer();
+    state.timerMin=0;
+    pause();
+    // restore volume for next play
+    if(state.soundId && masters[state.soundId]) loadAudioBlob(masters[state.soundId]);
+    renderChips();
+    updateTimerLabel();
+  }
+
+  // ---------- Rendering / UI ----------
+  function setNow(html){ el.now.innerHTML = html; }
+  function reflectPlay(){
+    el.play.classList.toggle("playing", state.playing);
+    el.playIcon.querySelector("path").setAttribute("d", state.playing?ICON_PAUSE:ICON_PLAY);
+    const cfg = SOUNDS.find(s=>s.id===state.soundId);
+    if(cfg) setNow(state.playing ? `<b>${cfg.name}</b> · playing` : `<b>${cfg.name}</b> · paused`);
+    else setNow("Pick a sound");
+    if("mediaSession" in navigator && cfg){
+      navigator.mediaSession.playbackState = state.playing?"playing":"paused";
+      navigator.mediaSession.metadata = new MediaMetadata({ title:cfg.name+" noise", artist:"Hush" });
+    }
+  }
+  function renderGrid(){
+    el.grid.innerHTML = SOUNDS.map(s=>
+      `<button class="sound${s.id===state.soundId?' on':''}" data-id="${s.id}">
+        <span class="ico">${s.ico}</span><span class="nm">${s.name}</span>
+      </button>`).join("");
+  }
+  function markLoading(id, on){
+    const node = el.grid.querySelector(`[data-id="${id}"]`);
+    if(node) node.classList.toggle("loading", on);
+  }
+  function renderChips(){
+    el.chips.innerHTML = TIMERS.map(m=>
+      `<button class="chip${m===state.timerMin?' on':''}" data-min="${m}">${m===0?'Off':m+'m'}</button>`).join("");
+  }
+  function setVolFill(){ el.vol.style.setProperty("--fill", (state.volume*100)+"%"); }
+
+  // ---------- Events ----------
+  el.grid.addEventListener("click", e=>{
+    const b = e.target.closest(".sound"); if(!b) return;
+    selectSound(b.dataset.id);
+  });
+  el.play.addEventListener("click", togglePlay);
+  el.chips.addEventListener("click", e=>{
+    const b = e.target.closest(".chip"); if(!b) return;
+    const m = +b.dataset.min;
+    if(m===0){ clearTimer(); state.timerMin=0; }
+    else startTimer(m);
+    renderChips(); updateTimerLabel(); persist();
+    // restore full volume if we were mid-fade
+    if(state.soundId && masters[state.soundId]) loadAudioBlob(masters[state.soundId]);
+    if(state.playing) el.audio.play().catch(()=>{});
+  });
+
+  // Volume is baked into the audio (iOS ignores audio.volume). Re-encoding the long
+  // master is heavy, so during the drag we only move the slider fill, then apply the
+  // new level once on release.
+  el.vol.addEventListener("input", ()=>{
+    state.volume = +el.vol.value/100;
+    setVolFill();
+  });
+  el.vol.addEventListener("change", ()=>{
+    if(state.soundId && masters[state.soundId]){
+      loadAudioBlob(masters[state.soundId]);
+      if(state.playing) el.audio.play().catch(()=>{});
+    }
+    persist();
+  });
+
+  el.audio.addEventListener("play", ()=>{ state.playing=true; reflectPlay(); });
+  el.audio.addEventListener("pause", ()=>{ if(!fadeRAF){ state.playing=false; reflectPlay(); } });
+
+  if("mediaSession" in navigator){
+    navigator.mediaSession.setActionHandler("play", ()=>play());
+    navigator.mediaSession.setActionHandler("pause", ()=>pause());
+  }
+
+  // ---------- Persistence ----------
+  function persist(){
+    try{ localStorage.setItem("hush", JSON.stringify({
+      soundId:state.soundId, volume:state.volume, timerMin:state.timerMin
+    })); }catch(e){}
+  }
+  function restore(){
+    try{
+      const s = JSON.parse(localStorage.getItem("hush")||"{}");
+      if(typeof s.volume==="number") state.volume=s.volume;
+      if(typeof s.timerMin==="number") state.timerMin=s.timerMin;
+      if(s.soundId && SOUNDS.some(x=>x.id===s.soundId)) state.soundId=s.soundId;
+    }catch(e){}
+  }
+
+  // ---------- Init ----------
+  restore();
+  el.vol.value = Math.round(state.volume*100);
+  setVolFill();
+  renderGrid();
+  renderChips();
+  updateTimerLabel();
+  reflectPlay();
+  if(state.soundId){
+    const cfg=SOUNDS.find(s=>s.id===state.soundId);
+    setNow(`<b>${cfg.name}</b> · tap play`);
+  }
+
+  // Service worker for true offline
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js").catch(()=>{}));
+  }
+})();
+</script>
+</body>
+</html>

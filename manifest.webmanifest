@@ -1,0 +1,15 @@
+{
+  "name": "Hush — White Noise",
+  "short_name": "Hush",
+  "description": "A calm, offline white-noise player. White, pink, brown, rain, ocean, and fan sounds with a sleep timer.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0b14",
+  "theme_color": "#0d0b14",
+  "categories": ["health", "lifestyle", "utilities"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
