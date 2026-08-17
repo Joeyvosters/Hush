@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Hush — White Noise</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="description" content="A calm, offline white-noise player. Rain, ocean, fan, breeze, and coffee-shop sounds with a sleep timer.">
+<meta name="description" content="A calm, offline white-noise player. Rain, ocean, fan, and breeze sounds with a sleep timer.">
 <meta name="theme-color" content="#0d0b14">
 <!-- iOS home-screen / standalone -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -172,8 +172,9 @@
       ],
       filter:{type:"lowpass", freq:1000, Q:0.5},
       am:{ waves:[ {period:41, depth:0.34}, {period:13, depth:0.22}, {period:5.5, depth:0.13} ] } },
-    // Coffee Shop: a fully custom event-driven ambience (see buildCoffeeShop()).
-    { id:"coffee", name:"Coffee Shop", ico:"☕", build:buildCoffeeShop },
+    // Coffee Shop (☕) is intentionally NOT listed here — it's a work in progress. Its
+    // synth (buildCoffeeShop, below) is kept for continued iteration; to expose it again,
+    // re-add a tile: { id:"coffee", name:"Coffee Shop", ico:"☕", build:buildCoffeeShop }.
   ];
 
   const SR = 44100;
@@ -338,14 +339,17 @@
 
   // ---------- Coffee Shop: a fully custom, event-driven ambience ----------
   // Built by summing several procedural layers into one M-length buffer:
-  //   • a low room-tone bed (the background hum)
-  //   • a murmur of distant conversation — noise shaped by vowel-formant bandpasses
-  //     and gated at a syllable rhythm, several detuned "voices" summed (unintelligible)
-  //   • sparse ceramic clinks (decaying inharmonic partials)
-  //   • frequent espresso steam bursts (enveloped high-pass hiss)
-  //   • coffee pours (burbling water with a rising cup-fill resonance)
+  //   • a very soft jazz-piano base (procedural chords over a slow progression)
+  //   • a low room-tone bed + a fireplace (low roar with random crackle pops)
+  //   • a chatter of many voices — a glottal buzz through vowel-formant bandpasses
+  //     (real harmonic/voiced structure, so it reads as people, not wind), syllable-gated
+  //   • coffee pours (gurgling water with a rising cup-fill resonance)
+  //   • espresso steam bursts that ramp up like a machine building pressure
+  //   • an occasional door (hinge creak + latch thud)
   // Discrete events are scheduled clear of the loop's crossfade region on both ends,
   // so finalize()'s fold still seams the continuous beds cleanly.
+
+  const midiToFreq = m => 440*Math.pow(2, (m-69)/12);
 
   // Bandpass `src` and accumulate the result into `out` (no extra buffer copy).
   function bandpassAccum(src, out, gain, freq, Q, len){
@@ -364,12 +368,12 @@
   function syllableEnv(len, rate){
     const env = new Float32Array(len);
     const step = SR/rate;
-    const a = Math.exp(-1/(SR*0.028));  // ~28 ms smoothing
+    const a = Math.exp(-1/(SR*0.018));  // ~18 ms smoothing => crisper articulation
     let cur = 0, target = 0.5, nextAt = step;
     for(let i=0;i<len;i++){
       if(i >= nextAt){
-        target = Math.random() < 0.14 ? 0 : (0.35 + Math.random()*0.65); // busy => few pauses
-        nextAt += step*(0.6 + Math.random()*0.8);
+        target = Math.random() < 0.16 ? 0 : (0.35 + Math.random()*0.65);
+        nextAt += step*(0.55 + Math.random()*0.8);
       }
       cur = target + (cur-target)*a;
       env[i] = cur;
@@ -377,29 +381,25 @@
     return env;
   }
 
-  // A ceramic "clink": a few inharmonic, exponentially-decaying partials + a tiny tick.
-  // Kept low-pitched and with quiet upper partials so it reads as a soft cup-set, not a
-  // sharp "ting".
-  function addClink(buf, at, amp){
-    const f0 = 1150 + Math.random()*950;   // ~1.15–2.1 kHz (lower, rounder)
-    const partials = [ {m:1, g:1.0, d:0.13+Math.random()*0.07},
-                       {m:2.76, g:0.34, d:0.08}, {m:5.4, g:0.10, d:0.035} ];
-    for(const p of partials){
-      const w = 2*Math.PI*f0*p.m/SR, dec = p.d*SR, len = Math.floor(dec*6);
-      for(let i=0;i<len && at+i<buf.length;i++)
-        buf[at+i] += amp*p.g*Math.exp(-i/dec)*Math.sin(w*i);
+  // A glottal "buzz": a sawtooth (rich in harmonics for the formants to shape) at f0 with
+  // slow intonation drift, so a formant-filtered copy sounds voiced rather than windy.
+  function makeBuzz(len, f0){
+    const out = new Float32Array(len);
+    let phase = 0;
+    for(let i=0;i<len;i++){
+      const drift = 1 + 0.06*Math.sin(2*Math.PI*i/(SR*1.3));
+      phase += f0*drift/SR; if(phase>=1) phase-=1;
+      out[i] = 2*phase-1;
     }
-    // soft, dull onset tick (quieter and shorter than a bright ceramic click)
-    for(let i=0;i<140 && at+i<buf.length;i++)
-      buf[at+i] += amp*0.26*(Math.random()*2-1)*Math.exp(-i/90);
+    return out;
   }
 
-  // Coffee pouring into a cup: burbling filtered water whose resonance rises as the cup
-  // fills (a time-varying bandpass swept upward), with a soft attack/release.
+  // Coffee pouring into a cup: gurgling filtered water whose resonance rises as the cup
+  // fills (a time-varying bandpass swept upward), plus discrete low "glug" blips.
   function addPour(buf, at, durSec, amp){
     const len = Math.floor(durSec*SR);
     const src = makeBase("white", len);
-    const f0 = 650, f1 = 1550;          // fill resonance sweeps up over the pour
+    const f0 = 600, f1 = 1500;          // fill resonance sweeps up over the pour
     let x1=0,x2=0,y1=0,y2=0;
     const atk = SR*0.2, rel = SR*0.5;
     for(let i=0;i<len && at+i<buf.length;i++){
@@ -409,23 +409,82 @@
       x2=x1; x1=x; y2=y1; y1=y;
       let e = 1;
       if(i < atk) e = i/atk; else if(i > len-rel) e = (len-i)/rel;
-      const burble = 1 + 0.45*Math.sin(2*Math.PI*i/(SR*0.028)) + 0.25*Math.sin(2*Math.PI*i/(SR*0.015));
-      buf[at+i] += amp*e*burble*y;
+      // deeper, more irregular gurgle
+      const g = 1 + 0.6*Math.sin(2*Math.PI*i/(SR*0.05)) + 0.4*Math.sin(2*Math.PI*i/(SR*0.021))
+                  + 0.25*Math.sin(2*Math.PI*i/(SR*0.011));
+      buf[at+i] += amp*e*Math.max(0,g)*y;
+    }
+    // discrete glugs sprinkled through the pour for extra gurgle
+    for(let g = at + Math.floor(0.2*SR); g < at+len-0.15*SR; g += Math.floor((0.1+Math.random()*0.18)*SR)){
+      const gf = 120 + Math.random()*130, gl = Math.floor((0.05+Math.random()*0.08)*SR);
+      for(let i=0;i<gl && g+i<buf.length;i++)
+        buf[g+i] += amp*0.5*Math.exp(-i/(gl*0.5))*Math.sin(2*Math.PI*gf*i/SR);
     }
   }
 
-  // An espresso steam burst: high-pass hiss with a soft attack/release and slight flutter.
+  // Espresso steam that RAMPS UP: hiss whose intensity grows across the burst (machine
+  // building pressure), with a quick release at the end.
   function addSteam(buf, at, durSec, amp){
     const len = Math.floor(durSec*SR);
     const n = makeBase("white", len);
     applyBiquad(n, {type:"highpass", freq:2600, Q:0.7}, len);
-    const atk = SR*0.35, rel = SR*0.9;
+    const rel = SR*0.5;
     for(let i=0;i<len && at+i<buf.length;i++){
-      let e = 1;
-      if(i < atk) e = i/atk;
-      else if(i > len-rel) e = (len-i)/rel;
-      const flutter = 1 + 0.12*Math.sin(2*Math.PI*i/(SR*0.05));
+      const frac = i/len;
+      let e = 0.2 + 0.8*frac*frac;             // rising crescendo
+      if(i > len-rel) e *= (len-i)/rel;        // quick release
+      const flutter = 1 + 0.15*Math.sin(2*Math.PI*i/(SR*0.045));
       buf[at+i] += amp*e*flutter*n[i];
+    }
+  }
+
+  // A door: a hinge creak (swept high-Q bandpass on noise) then a latch thud (low sine +
+  // click), a beat later.
+  function addDoor(buf, at){
+    const cl = Math.floor((0.3+Math.random()*0.3)*SR);
+    const n = makeBase("white", cl);
+    let x1=0,x2=0,y1=0,y2=0;
+    for(let i=0;i<cl && at+i<buf.length;i++){
+      const c = biquadCoeffs("bandpass", 400 + 300*Math.sin(2*Math.PI*i/(SR*0.15)), 6);
+      const x=n[i]; const y=c.b0*x+c.b1*x1+c.b2*x2-c.a1*y1-c.a2*y2; x2=x1;x1=x;y2=y1;y1=y;
+      buf[at+i] += 0.13*Math.sin(Math.PI*i/cl)*y;
+    }
+    const thud = at + Math.floor((0.25+Math.random()*0.3)*SR), tl = Math.floor(0.28*SR);
+    for(let i=0;i<tl && thud+i<buf.length;i++)
+      buf[thud+i] += 0.42*Math.exp(-i/(tl*0.22))*Math.sin(2*Math.PI*(88+Math.random()*8)*i/SR);
+    for(let i=0;i<280 && thud+i<buf.length;i++)
+      buf[thud+i] += 0.2*(Math.random()*2-1)*Math.exp(-i/120);
+  }
+
+  // A soft piano note: a few harmonics with exp decay + a gentle attack. Deliberately mellow.
+  function addPianoNote(buf, at, freq, durSec, amp){
+    const len = Math.floor(durSec*SR), atk = SR*0.012, dec = durSec*SR*0.5;
+    const harm = [[1,1.0],[2,0.5],[3,0.26],[4,0.13],[6,0.05]];
+    for(const [h,g] of harm){
+      const w = 2*Math.PI*freq*h/SR;
+      for(let i=0;i<len && at+i<buf.length;i++){
+        let e = Math.exp(-i/dec); if(i<atk) e *= i/atk;
+        buf[at+i] += amp*g*e*Math.sin(w*i);
+      }
+    }
+  }
+
+  // A very soft jazz-piano base: a slow ii–V–I–vi loop of 7th chords, gently arpeggiated,
+  // with an occasional melody note. Kept quiet so it sits under everything.
+  function addJazz(buf){
+    const root = 46 + Math.floor(Math.random()*4);                 // low root (~Bb2–D3)
+    const prog = [ [0,4,7,11], [9,12,16,19], [2,5,9,12], [7,11,14,17] ]; // maj7 / m7 / m7 / 7
+    let ci = 0;
+    for(let t = XF + 2*SR; t < N - 4*SR; ci++){
+      const ch = prog[ci % prog.length];
+      addPianoNote(buf, Math.floor(t), midiToFreq(root + ch[0] - 12), 3.2, 0.10); // bass
+      for(let k=1;k<ch.length;k++)                                                  // voicing
+        addPianoNote(buf, Math.floor(t + (0.05+Math.random()*0.12)*k*SR), midiToFreq(root+ch[k]), 2.6, 0.06);
+      if(Math.random() < 0.5){                                                      // melody
+        const mel = ch[1 + Math.floor(Math.random()*(ch.length-1))] + 12;
+        addPianoNote(buf, Math.floor(t + (0.6+Math.random()*1.2)*SR), midiToFreq(root+mel), 1.6, 0.05);
+      }
+      t += (3.2 + Math.random()*1.8)*SR;
     }
   }
 
@@ -433,45 +492,69 @@
     const len = M;
     const buf = new Float32Array(len);
 
-    // 1. Room-tone bed: brown + a little low pink, lowpassed, with a slow swell.
+    // 1. Soft jazz-piano base.
+    addJazz(buf);
+
+    // 2. Low room-tone bed (very soft) + fireplace roar with random crackle pops.
     {
       const b1 = makeBase("brown", len), b2 = makeBase("pink", len);
       applyBiquad(b2, {type:"lowpass", freq:600, Q:0.6}, len);
       for(let i=0;i<len;i++) b1[i] = b1[i] + b2[i]*0.5;
       applyBiquad(b1, {type:"lowpass", freq:430, Q:0.5}, len);
       const cyc = Math.max(1, Math.round(len/(SR*23))), per = len/cyc;
-      for(let i=0;i<len;i++) buf[i] += b1[i]*0.11*(1 + 0.2*Math.sin(2*Math.PI*i/per));
+      for(let i=0;i<len;i++) buf[i] += b1[i]*0.06*(1 + 0.2*Math.sin(2*Math.PI*i/per));
+
+      const roar = makeBase("brown", len);
+      applyBiquad(roar, {type:"lowpass", freq:300, Q:0.6}, len);
+      for(let i=0;i<len;i++){
+        const flick = 1 + 0.25*Math.sin(2*Math.PI*i/(SR*0.7)) + 0.15*(Math.random()*2-1);
+        buf[i] += 0.055*roar[i]*flick;
+      }
+      // crackles: dense, tiny, quiet decaying pops (fire snaps), off the loop seam
+      for(let t = XF; t < N - 0.3*SR; t += (0.05 + Math.random()*0.5)*SR){
+        const cat = Math.floor(t), cl = Math.floor((0.004 + Math.random()*0.02)*SR);
+        const ca = 0.06 + Math.random()*0.16;
+        for(let i=0;i<cl && cat+i<buf.length;i++)
+          buf[cat+i] += ca*(Math.random()*2-1)*Math.exp(-i/(cl*0.4));
+      }
     }
 
-    // 2. Conversation murmur: several detuned formant "voices", each syllable-gated.
+    // 3. Chatter: many voiced (buzz→formant) speakers, syllable-gated. Shared breath noise
+    //    (offset per voice) adds consonants without a full noise buffer each.
+    const shared = makeBase("white", len);
+    const fg = [1.0, 0.7, 0.42];
     const voices = [
-      { f:[[500,3],[1500,3.5],[2500,4]], rate:4.6 },
-      { f:[[430,3],[1300,3.5],[2300,4]], rate:5.1 },
-      { f:[[600,3],[1700,3.5],[2700,4]], rate:4.1 },
-      { f:[[550,3],[1400,3.5],[2600,4]], rate:5.6 },
+      { f0:130, rate:4.6, fm:[[520,4],[1500,5],[2500,6]], g:0.085 },
+      { f0:170, rate:5.1, fm:[[600,4],[1700,5],[2700,6]], g:0.075 },
+      { f0:110, rate:4.1, fm:[[480,4],[1400,5],[2400,6]], g:0.085 },
+      { f0:200, rate:5.6, fm:[[650,4],[1800,5],[2800,6]], g:0.07  },
+      { f0:150, rate:4.9, fm:[[560,4],[1600,5],[2600,6]], g:0.08  },
     ];
-    const fg = [1.0, 0.7, 0.4]; // formant gains (F1..F3)
+    let noff = 0;
     for(const v of voices){
-      const src = makeBase("pink", len);
+      const buzz = makeBuzz(len, v.f0);
+      const src = new Float32Array(len);
+      for(let i=0;i<len;i++) src[i] = buzz[i]*0.85 + shared[(i+noff)%len]*0.15;
       const voiced = new Float32Array(len);
-      for(let k=0;k<v.f.length;k++) bandpassAccum(src, voiced, fg[k], v.f[k][0], v.f[k][1], len);
+      for(let k=0;k<v.fm.length;k++) bandpassAccum(src, voiced, fg[k], v.fm[k][0], v.fm[k][1], len);
       const env = syllableEnv(len, v.rate);
-      for(let i=0;i<len;i++) buf[i] += voiced[i]*env[i]*0.13; // busy => full, steady murmur
+      for(let i=0;i<len;i++) buf[i] += v.g*voiced[i]*env[i];
+      noff = (noff + 97003) % len;
     }
 
-    // 3. Ceramic clinks — sparser: one every ~13–24 s, kept off the loop seam.
-    for(let t = XF + Math.random()*10*SR; t < N - 0.5*SR; t += (13 + Math.random()*11)*SR)
-      addClink(buf, Math.floor(t), 0.26 + Math.random()*0.16);
-
-    // 4. Espresso steam — frequent: every ~20–40 s, 2.5–6 s each, clear of the seam.
-    for(let s = XF + 8*SR + Math.random()*15*SR; s < N - 7*SR; s += (20 + Math.random()*20)*SR)
-      addSteam(buf, Math.floor(s), 2.5 + Math.random()*3.5, 0.27);
-
-    // 5. Coffee pouring — every ~26–50 s, 2.6–4.4 s each, clear of the seam.
+    // 4. Coffee pouring — every ~26–50 s, clear of the seam.
     for(let p = XF + 12*SR + Math.random()*18*SR; p < N - 5*SR; p += (26 + Math.random()*24)*SR)
       addPour(buf, Math.floor(p), 2.6 + Math.random()*1.8, 0.22);
 
-    // Gentle soft-limit so the sparse transients sit with the bed instead of dominating
+    // 5. Espresso steam (ramping) — frequent, every ~20–40 s, clear of the seam.
+    for(let s = XF + 8*SR + Math.random()*15*SR; s < N - 7*SR; s += (20 + Math.random()*20)*SR)
+      addSteam(buf, Math.floor(s), 2.5 + Math.random()*3.5, 0.27);
+
+    // 6. Door open/close — occasional, every ~70–130 s, clear of the seam.
+    for(let d = XF + 20*SR + Math.random()*40*SR; d < N - 2*SR; d += (70 + Math.random()*60)*SR)
+      addDoor(buf, Math.floor(d));
+
+    // Gentle soft-limit so the sparse transients sit with the beds instead of dominating
     // the peak normalise that follows.
     for(let i=0;i<len;i++) buf[i] = Math.tanh(buf[i]*1.1);
     return buf;

@@ -15,7 +15,8 @@ the same waveform.
 volume across the whole loop with several slow amplitude waves summed together (a long
 gust, a medium swell, and a shorter flutter) for a gustier, less static feel.
 
-**Coffee Shop** is a fully custom, event-driven ambience: a low room-tone bed, a murmur
+**Coffee Shop** *(work in progress — not currently in the sound grid; its synth is kept
+in `index.html` for continued iteration)* is a fully custom, event-driven ambience: a low room-tone bed, a murmur
 of distant conversation (noise shaped by vowel-formant bandpasses and gated at a syllable
 rhythm, several detuned "voices" summed so nothing is intelligible), sparse low-pitched
 ceramic clinks (decaying inharmonic partials), frequent espresso steam bursts (enveloped
