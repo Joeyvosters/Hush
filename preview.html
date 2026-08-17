@@ -659,7 +659,7 @@
     const cfg = SOUNDS.find(s=>s.id===id);
     if(!cfg) return;
     state.soundId = id;
-    renderGrid();
+    reflectRows();
     setNow(`<b>${cfg.name}</b> · preparing…`);
     markLoading(id, true);
     try{
