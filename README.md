@@ -17,9 +17,11 @@ gust, a medium swell, and a shorter flutter) for a gustier, less static feel.
 
 **Coffee Shop** is a fully custom, event-driven ambience: a low room-tone bed, a murmur
 of distant conversation (noise shaped by vowel-formant bandpasses and gated at a syllable
-rhythm, several detuned "voices" summed so nothing is intelligible), sparse ceramic clinks
-(decaying inharmonic partials), and the occasional espresso steam burst. Discrete events
-are scheduled clear of the loop's crossfade region so the seam stays clean.
+rhythm, several detuned "voices" summed so nothing is intelligible), sparse low-pitched
+ceramic clinks (decaying inharmonic partials), frequent espresso steam bursts (enveloped
+high-pass hiss), and coffee pours (burbling water through a bandpass whose resonance sweeps
+up as the cup fills). Discrete events are scheduled clear of the loop's crossfade region so
+the seam stays clean.
 
 ### Why 5 minutes — the "no audible pattern" design
 

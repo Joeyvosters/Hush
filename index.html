@@ -342,7 +342,8 @@
   //   • a murmur of distant conversation — noise shaped by vowel-formant bandpasses
   //     and gated at a syllable rhythm, several detuned "voices" summed (unintelligible)
   //   • sparse ceramic clinks (decaying inharmonic partials)
-  //   • occasional espresso steam bursts (enveloped high-pass hiss)
+  //   • frequent espresso steam bursts (enveloped high-pass hiss)
+  //   • coffee pours (burbling water with a rising cup-fill resonance)
   // Discrete events are scheduled clear of the loop's crossfade region on both ends,
   // so finalize()'s fold still seams the continuous beds cleanly.
 
@@ -377,18 +378,40 @@
   }
 
   // A ceramic "clink": a few inharmonic, exponentially-decaying partials + a tiny tick.
+  // Kept low-pitched and with quiet upper partials so it reads as a soft cup-set, not a
+  // sharp "ting".
   function addClink(buf, at, amp){
-    const f0 = 2400 + Math.random()*1900;
-    const partials = [ {m:1, g:1.0, d:0.10+Math.random()*0.06},
-                       {m:2.76, g:0.5, d:0.06}, {m:5.4, g:0.24, d:0.03} ];
+    const f0 = 1150 + Math.random()*950;   // ~1.15–2.1 kHz (lower, rounder)
+    const partials = [ {m:1, g:1.0, d:0.13+Math.random()*0.07},
+                       {m:2.76, g:0.34, d:0.08}, {m:5.4, g:0.10, d:0.035} ];
     for(const p of partials){
       const w = 2*Math.PI*f0*p.m/SR, dec = p.d*SR, len = Math.floor(dec*6);
       for(let i=0;i<len && at+i<buf.length;i++)
         buf[at+i] += amp*p.g*Math.exp(-i/dec)*Math.sin(w*i);
     }
-    // onset tick
-    for(let i=0;i<220 && at+i<buf.length;i++)
-      buf[at+i] += amp*0.5*(Math.random()*2-1)*Math.exp(-i/60);
+    // soft, dull onset tick (quieter and shorter than a bright ceramic click)
+    for(let i=0;i<140 && at+i<buf.length;i++)
+      buf[at+i] += amp*0.26*(Math.random()*2-1)*Math.exp(-i/90);
+  }
+
+  // Coffee pouring into a cup: burbling filtered water whose resonance rises as the cup
+  // fills (a time-varying bandpass swept upward), with a soft attack/release.
+  function addPour(buf, at, durSec, amp){
+    const len = Math.floor(durSec*SR);
+    const src = makeBase("white", len);
+    const f0 = 650, f1 = 1550;          // fill resonance sweeps up over the pour
+    let x1=0,x2=0,y1=0,y2=0;
+    const atk = SR*0.2, rel = SR*0.5;
+    for(let i=0;i<len && at+i<buf.length;i++){
+      const c = biquadCoeffs("bandpass", f0 + (f1-f0)*(i/len), 1.2);
+      const x = src[i];
+      const y = c.b0*x + c.b1*x1 + c.b2*x2 - c.a1*y1 - c.a2*y2;
+      x2=x1; x1=x; y2=y1; y1=y;
+      let e = 1;
+      if(i < atk) e = i/atk; else if(i > len-rel) e = (len-i)/rel;
+      const burble = 1 + 0.45*Math.sin(2*Math.PI*i/(SR*0.028)) + 0.25*Math.sin(2*Math.PI*i/(SR*0.015));
+      buf[at+i] += amp*e*burble*y;
+    }
   }
 
   // An espresso steam burst: high-pass hiss with a soft attack/release and slight flutter.
@@ -436,13 +459,17 @@
       for(let i=0;i<len;i++) buf[i] += voiced[i]*env[i]*0.13; // busy => full, steady murmur
     }
 
-    // 3. Ceramic clinks — busy: one every ~5–11 s, kept off the loop seam.
-    for(let t = XF + Math.random()*6*SR; t < N - 0.5*SR; t += (5 + Math.random()*6)*SR)
-      addClink(buf, Math.floor(t), 0.30 + Math.random()*0.22);
+    // 3. Ceramic clinks — sparser: one every ~13–24 s, kept off the loop seam.
+    for(let t = XF + Math.random()*10*SR; t < N - 0.5*SR; t += (13 + Math.random()*11)*SR)
+      addClink(buf, Math.floor(t), 0.26 + Math.random()*0.16);
 
-    // 4. Espresso steam — every ~45–80 s, 3–6 s each, clear of the seam.
-    for(let s = XF + 15*SR + Math.random()*25*SR; s < N - 7*SR; s += (45 + Math.random()*35)*SR)
-      addSteam(buf, Math.floor(s), 3 + Math.random()*3, 0.26);
+    // 4. Espresso steam — frequent: every ~20–40 s, 2.5–6 s each, clear of the seam.
+    for(let s = XF + 8*SR + Math.random()*15*SR; s < N - 7*SR; s += (20 + Math.random()*20)*SR)
+      addSteam(buf, Math.floor(s), 2.5 + Math.random()*3.5, 0.27);
+
+    // 5. Coffee pouring — every ~26–50 s, 2.6–4.4 s each, clear of the seam.
+    for(let p = XF + 12*SR + Math.random()*18*SR; p < N - 5*SR; p += (26 + Math.random()*24)*SR)
+      addPour(buf, Math.floor(p), 2.6 + Math.random()*1.8, 0.22);
 
     // Gentle soft-limit so the sparse transients sit with the bed instead of dominating
     // the peak normalise that follows.
