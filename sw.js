@@ -1,11 +1,13 @@
 // Hush service worker — cache the shell so the app opens offline.
 // Bump CACHE when any listed file changes.
-const CACHE = "hush-v8";
+const CACHE = "hush-v9";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./apple-touch-icon.png",
+  "./icon-512.png",
 ];
 
 self.addEventListener("install", (e) => {
